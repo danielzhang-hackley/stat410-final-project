@@ -1,0 +1,81 @@
+---
+title: "Group Project"
+author: "Jasmine Lu"
+date: "2024-11-05"
+output: pdf_document
+---
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(reshape2)
+source("preprocess.R")
+drop_cols <- c(
+  "id", "url", "region_url", "VIN", "image_url", "description", "lat", "long", 
+  "posting_date", "size", "county"
+)
+numerical <- c("price", "year", "odometer")
+data <- read.csv("vehicles.csv")
+df <- data
+df <- remove_cols(df, drop_cols)
+df <- remove_null(df)
+get_num_unique(df)
+```
+
+```{r,warning=FALSE}
+df %>%
+  select(year, price, odometer) %>%
+  gather(key = "var", value = "value") %>%
+  ggplot(aes(x = value)) +
+    geom_histogram(bins = 15, fill = "skyblue", color = "black", stat="bin") +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw() +
+    labs(title = "Histograms of Numeric Variables", x = "Value", y = "Count")
+```
+
+```{r}
+df %>%
+  select(year, price, odometer) %>%
+  gather(key = "var", value = "value") %>%
+  group_by(var) %>%
+  # Calculate Q1, Q3, and IQR for each variable
+  mutate(
+    Q1 = quantile(value, 0.25, na.rm = TRUE),
+    Q3 = quantile(value, 0.75, na.rm = TRUE),
+    IQR = Q3 - Q1,
+    lower_bound = Q1 - 1.5 * IQR,
+    upper_bound = Q3 + 1.5 * IQR
+  ) %>%
+  # Filter out the outliers
+  filter(value >= lower_bound & value <= upper_bound) %>%
+  ggplot(aes(x = var, y = value)) +
+    geom_boxplot(fill = "skyblue", color = "black", outlier.shape=NA) +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw() +
+    labs(title = "Box Plots of Numeric Variables (Without Outliers)", x = "Variable", y = "Value")
+
+```
+
+
+```{r}
+df %>%
+  select(condition, cylinders, fuel, title_status, transmission, drive) %>%
+  gather(key = "var", value = "value") %>%
+  ggplot(aes(x = value)) +
+    geom_histogram(fill = "skyblue", color = "black", stat="count") +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+    labs(title = "Bar Charts of Categorical Variables", x = "Value", y = "Count")
+```
+
+```{r,warning=FALSE}
+library(tm)
+library(wordcloud)
+wordcloud(data$manufacturer
+        , scale=c(5,1)
+        , random.order=FALSE
+        , rot.per=0
+        , colors=brewer.pal(8, "Dark2"))
+```
