@@ -1,0 +1,56 @@
+---
+title: "Linearity Check"
+author: "David Coronado"
+date: "2024-11-08"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(reshape2)
+source("preprocess.R")
+drop_cols <- c(
+  "id", "url", "region_url", "VIN", "image_url", "description", "lat", "long", 
+  "posting_date", "size", "county"
+)
+numerical <- c("price", "year", "odometer")
+data <- read.csv("vehicles.csv")
+df <- data
+df <- remove_cols(df, drop_cols)
+df <- remove_null(df)
+```
+
+```{r}
+#col is string of the name of the column
+remove_outlier <- function(df, col){
+  
+  Q1 <- quantile(df[,col], 0.25, na.rm=TRUE)
+  Q3 <- quantile(df[,col], 0.75, na.rm=TRUE)
+  IQR <- Q3-Q1 
+  lower_bound <- Q1-1.5*IQR
+  upper_bound <- Q3+1.5*IQR
+  copy <- df[df[,col] >=lower_bound & df[,col] <= upper_bound,]
+  return (copy)
+}
+check <- remove_outlier(df, 'price')
+check <- remove_outlier(check, 'year')
+check <- remove_outlier(check, 'odometer')
+plot(check$odometer, check$price, xlab='odometer',ylab='price')
+plot(check$year, check$price, xlab='year',ylab='price')
+```
+
+```{r}
+#added converted to the preprocess method to get back the original dataframe with factors
+categorical <- convert_categorial(check,numerical)$converted
+
+for(column in colnames(categorical)[!(colnames(categorical)%in%numerical)]){
+  plot(categorical[,column],categorical$price, xlab=column)
+}
+```
+
