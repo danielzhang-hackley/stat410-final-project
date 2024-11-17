@@ -70,7 +70,7 @@ convert_categorial <- function(df, numerical) {
     }
   }
   
-  return (list("design" = model.matrix(~., data = copy), "reference" = ref))
+  return (list("design" = model.matrix(~., data = copy), "reference" = ref, "converted"=copy))
 }
 
 get_num_unique <- function(df) {
