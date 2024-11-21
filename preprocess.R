@@ -1,8 +1,7 @@
 # drop_cols are the columns we should remove numerical are the numerical columns,
 # and should be the argument to `convert_categorical`
 drop_cols <- c(
-  "id", "url", "region_url", "VIN", "image_url", "description", "lat", "long", 
-  "posting_date", "size", "county"
+  "Model", "Location", "Color", "Owner", "Seller.Type", "Max.Power", "Max.Torque", "Drivetrain"
 )
 numerical <- c("price", "year", "odometer")
 
@@ -29,10 +28,10 @@ get_frac_null <- function(df) {
   #' Finds the fraction of null/empty values in each column of data.frame df.
   #' Each column of the returned result is the fraction for the associated column
   #' in df.
-
+  
   result <- get_num_null(df)
   result[1, ] <- result[1, ] / nrow(df)
-
+  
   return (result)
 }
 
@@ -53,7 +52,7 @@ remove_null <- function(df) {
   return (df[idx, ])
 }
 
-convert_categorial <- function(df, numerical) {
+convert_categorial <- function(df, categorical) {
   #' Convert the categorical variables into factors; exclude the numerical
   #' values specified in the "factorization." Returns a list with "design" being
   #' the new design matrix, and "reference" being the reference levels for each
@@ -64,13 +63,13 @@ convert_categorial <- function(df, numerical) {
   colnames(ref) <- colnames(df)
   
   for (column in colnames(copy)) {
-    if (!(column %in% numerical)){
+    if (column %in% categorical){
       copy[, column] <- factor(copy[, column])
       ref[1, column] <- levels(copy[, column])[1]
     }
   }
   
-  return (list("design" = model.matrix(~., data = copy), "reference" = ref))
+  return (list("design" = model.matrix(~., data = copy), "reference" = ref, "converted"=copy))
 }
 
 convert_categorial_2 <- function(df, numerical) {

@@ -1,0 +1,95 @@
+---
+title: "artifact inspection"
+author: "Eugenia Sung"
+date: "2024-11-07"
+output: pdf_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(naniar)
+source("preprocess.R")
+
+get_num_null <- function(df) {
+  result <- data.frame(matrix(nrow = 1, ncol = ncol(df)))
+  colnames(result) <- colnames(df)
+  for (column in colnames(df)) {
+    result[1, column] <- sum(is.na(df[, column]) | df[, column] == "")
+  }
+  return(result)
+}
+
+get_frac_null <- function(df) {
+  result <- get_num_null(df)
+  result[1, ] <- result[1, ] / nrow(df)
+  return(result)
+}
+
+remove_cols <- function(df, to_remove) {
+  return(df[, !(colnames(df) %in% to_remove)])
+}
+
+remove_null <- function(df) {
+  idx <- !(is.na(df[, 1]) | (df[, 1] == ""))
+  for (column in 2:ncol(df)) {
+    idx <- idx & !(is.na(df[, column]) | (df[, column] == ""))
+  }
+  return(df[idx, ])
+}
+
+convert_categorial <- function(df, numerical) {
+  copy <- df
+  ref <- data.frame(matrix(nrow = 1, ncol = ncol(df)))
+  colnames(ref) <- colnames(df)
+  for (column in colnames(copy)) {
+    if (!(column %in% numerical)){
+      copy[, column] <- factor(copy[, column])
+      ref[1, column] <- levels(copy[, column])[1]
+    }
+  }
+  return(list("design" = model.matrix(~., data = copy), "reference" = ref))
+}
+
+get_num_unique <- function(df) {
+  result <- data.frame(matrix(nrow = 1, ncol = ncol(df)))
+  colnames(result) <- colnames(df)
+  for (column in colnames(df)) {
+    result[, column] <- length(unique(df[, column]))
+  }
+  return(result)
+}
+```
+
+```{r}
+df <- vehicles
+
+drop_cols <- c(
+  "id", "url", "region_url", "VIN", "image_url", "description", "lat", "long", 
+  "posting_date", "size", "county"
+)
+numerical <- c("price", "year", "odometer")
+
+df_clean <- remove_cols(df, drop_cols)
+
+df_clean <- remove_null(df_clean)
+
+cat("\nAfter Cleaning:\n")
+print("Number of Rows and Columns:")
+dim(df_clean)
+```
+
+```{r}
+remove_duplicates <- function(df) {
+  num_duplicates <- nrow(df) - nrow(unique(df))
+  cat("Number of duplicate rows:", num_duplicates, "\n")
+    df_clean <- df[!duplicated(df), ]
+  return(df_clean)
+}
+
+df_clean <- remove_duplicates(df_clean)
+
+cat("Number of rows after removing duplicates:", nrow(df_clean), "\n")
+```

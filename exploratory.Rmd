@@ -1,0 +1,120 @@
+---
+title: "exploratory"
+author: "Jasmine Lu"
+date: "2024-11-20"
+output: pdf_document
+---
+
+Libraries
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+library(faraway)
+```
+
+Clean data
+```{r}
+source("preprocess.R")
+drop_cols <- c(
+  "Model", "Location", "Color", "Owner", "Seller.Type", "Max.Power", "Max.Torque", "Drivetrain", "Make", "Fuel.Type"
+)
+data <- read.csv("car details v4.csv")
+df <- remove_cols(data, drop_cols)
+df <- remove_null(df)
+df$Transmission <- ifelse(df$Transmission == "Manual", 0, 1) #Manual = 0, Automatic = 1
+df$Engine <- as.numeric(gsub("[^0-9]", "", df$Engine)) #Convert to numbers, ex. "123 cc" -> 123
+```
+
+Histogram
+```{r}
+df %>%
+  gather(key = "var", value = "value") %>%
+  ggplot(aes(x = value)) +
+    geom_histogram(bins = 15, fill = "blue", color = "black", stat="bin") +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw() +
+    labs(title = "Histograms of Variables", x = "Value", y = "Count")
+```
+
+Linearity
+```{r}
+df %>%
+  gather(-Price, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = Price)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw() +
+  labs(title = "Pairwise Scatterplot", x = "Value", y = "Price")
+```
+
+Log Transformation
+```{r}
+df_log <- df
+df_log$Price <- log(df_log$Price)
+df_log %>%
+  gather(-Price, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = Price)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    facet_wrap(~ var, scales = "free") +
+    theme_bw() +
+  labs(title = "Pairwise Scatterplot", x = "Value", y = "Price")
+```
+
+Correlation
+```{r}
+cor_matrix <- cor(df_log[, sapply(df_log, is.numeric)])
+cor_melted <- melt(cor_matrix)
+ggplot(data = cor_melted, aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile(color = "white") +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                         midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                         name="Correlation") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    labs(x = "", y = "", title = "Correlation Matrix") +
+    geom_text(aes(label = sprintf("%.2f", value)), size = 3)
+```
+
+
+MLR Model
+```{r}
+model <- lm(Price ~ ., data = df_log)
+summary(model)
+```
+
+```{r}
+vif(model) #Looks like Length have a high Variance Inflation Factor so we can try removing it
+```
+
+```{r}
+model_without_length <- lm(Price ~ . - Length, data = df_log)
+summary(model_without_length)
+vif(model_without_length)
+```
+
+```{r}
+cat("\nInterpretation of Model Parameter Estimates:\n")
+print(coef(summary(model_without_length)))
+```
+
+Residual plot
+```{r}
+residuals_values <- residuals(model_without_length)
+plot(residuals_values, type = 'p', main = "Residual Plot", xlab = "Observation Index", ylab = "Residuals")
+abline(h = 0, col = "red")
+```
+
+Histogram of Residuals
+```{r}
+model_residuals = model_without_length$residuals
+hist(model_residuals)
+```
+
+```{r}
+qqnorm(model_residuals)
+qqline(model_residuals)
+```
