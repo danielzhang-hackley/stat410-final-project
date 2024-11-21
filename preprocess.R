@@ -73,6 +73,26 @@ convert_categorial <- function(df, numerical) {
   return (list("design" = model.matrix(~., data = copy), "reference" = ref))
 }
 
+convert_categorial_2 <- function(df, numerical) {
+  #' Convert the categorical variables into factors; exclude the numerical
+  #' values specified in the "factorization." Returns a list with "design" being
+  #' the new design matrix, and "reference" being the reference levels for each
+  #' categorical value.
+  
+  copy <- df
+  ref <- data.frame(matrix(nrow = 1, ncol = ncol(df)))
+  colnames(ref) <- colnames(df)
+  
+  for (column in colnames(copy)) {
+    if (!(column %in% numerical)){
+      copy[, column] <- factor(copy[, column])
+      ref[1, column] <- levels(copy[, column])[1]
+    }
+  }
+  
+  return (list("design" = copy, "reference" = ref))
+}
+
 get_num_unique <- function(df) {
   #' Finds the number of unique values in each column of data.frame df. Each
   #' column of the returned result is the fraction for the associated column in
@@ -86,4 +106,17 @@ get_num_unique <- function(df) {
   }
   
   return (result)
+}
+
+remove_outliers <- function(df, cols){
+  copy <- df
+  for (col in cols) {
+    Q1 <- quantile(df[,col], 0.25, na.rm=TRUE)
+    Q3 <- quantile(df[,col], 0.75, na.rm=TRUE)
+    IQR <- Q3-Q1 
+    lower_bound <- Q1-1.5*IQR
+    upper_bound <- Q3+1.5*IQR
+    copy <- copy[copy[,col] >= lower_bound & copy[,col] <= upper_bound,]
+  }
+  return (copy)
 }
