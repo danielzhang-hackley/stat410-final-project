@@ -52,44 +52,26 @@ remove_null <- function(df) {
   return (df[idx, ])
 }
 
-convert_categorial <- function(df, categorical) {
+convert_categorical <- function(df, categorical) {
   #' Convert the categorical variables into factors; exclude the numerical
-  #' values specified in the "factorization." Returns a list with "design" being
+  #' values specified in the "factorization." Returns a list with "dummy" being
   #' the new design matrix, and "reference" being the reference levels for each
   #' categorical value.
   
   copy <- df
-  ref <- data.frame(matrix(nrow = 1, ncol = ncol(df)))
-  colnames(ref) <- colnames(df)
+  ref <- list()
   
   for (column in colnames(copy)) {
     if (column %in% categorical){
       copy[, column] <- factor(copy[, column])
-      ref[1, column] <- levels(copy[, column])[1]
+      ref[column] <- levels(copy[, column])[1]
     }
   }
   
-  return (list("design" = model.matrix(~., data = copy), "reference" = ref, "converted"=copy))
-}
-
-convert_categorial_2 <- function(df, numerical) {
-  #' Convert the categorical variables into factors; exclude the numerical
-  #' values specified in the "factorization." Returns a list with "design" being
-  #' the new design matrix, and "reference" being the reference levels for each
-  #' categorical value.
+  final <- model.matrix(~., data = copy)
+  final <- remove_cols(final, c("(Intercept)"))
   
-  copy <- df
-  ref <- data.frame(matrix(nrow = 1, ncol = ncol(df)))
-  colnames(ref) <- colnames(df)
-  
-  for (column in colnames(copy)) {
-    if (!(column %in% numerical)){
-      copy[, column] <- factor(copy[, column])
-      ref[1, column] <- levels(copy[, column])[1]
-    }
-  }
-  
-  return (list("design" = copy, "reference" = ref))
+  return (list("dummy" = final, "factor" = copy, "reference" = ref))
 }
 
 get_num_unique <- function(df) {
