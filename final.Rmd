@@ -86,6 +86,12 @@ design <- design[-bad_idx, ]
 nrow(design)
 ncol(design)
 ```
+## Naive
+```{r}
+naive <- lm(log(Price) ~., data = df)
+summary(naive)
+```
+
 
 ## Multicollinearity
 ```{r}
@@ -181,5 +187,10 @@ for (col in colnames(subset)) {
 }
 
 normalized_model <- lm(log(Price)~., data = subset)
+
+sort(abs(normalized_model$coefficients), decreasing = T)
 ```
 
+```{r}
+normalized_model$coefficients
+```
