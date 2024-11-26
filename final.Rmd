@@ -152,7 +152,34 @@ npar <- length(reduced_model$coefficients) + 1; n <- length(reduced_model$residu
 extractAIC(reduced_model)[2] + 2*npar*(npar + 1)/(n - npar - 1)
 ```
 
-## Interactions
+## Confidence Intervals
 ```{r}
+err <- summary(reduced_model)$coefficients[, "Std. Error"]
+est <- summary(reduced_model)$coefficients[, "Estimate"]
+tval <- qt(1 - 0.05/2, df = nrow(x) - length(reduced_model$coefficients))
+
+ci_red <- data.frame(low = est - err * tval, high = est + err * tval)
+
+err <- summary(model)$coefficients[, "Std. Error"]
+est <- summary(model)$coefficients[, "Estimate"]
+tval <- qt(1 - 0.05/2, df = nrow(x) - length(model$coefficients))
+
+ci_full <- data.frame(low = est - err * tval, high = est + err * tval)
+```
+
+## Normalized models
+```{r}
+keep_cols <- gsub("^`|`$", "", names(reduced_model$coefficients))
+keep_cols <- keep_cols[keep_cols != "(Intercept)"]
+keep_cols <- c(keep_cols, "Price")
+
+subset <- x[, keep_cols]
+for (col in colnames(subset)) {
+  if (col != "Price") {
+    subset[, col] <- subset[, col] - max(subset[, col])
+  }
+}
+
+normalized_model <- lm(log(Price)~., data = subset)
 ```
 
