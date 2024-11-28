@@ -125,6 +125,12 @@ summary(reduced_model)
 anova(reduced_model)
 ```
 
+## Final Model Verification
+```{r}
+plot(reduced_model)
+```
+
+
 ## Normalized Coefficients
 ```{r}
 normalized <- remove_cols(x, old[!(old %in% new)]) # removed from multicollinearity test
