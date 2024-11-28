@@ -1,0 +1,167 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+library(car)
+library(reshape2)
+library(ggplot2)
+library(MASS)
+library(interactions)
+
+source("clean_data.R")
+
+
+df <- remove_cols(df, c("Color", "Model"))
+
+# Remove columns with only one observation and affected rows
+res <- convert_categorical(df, categorical)
+design <- as.data.frame(res$dummy)
+
+singles <- c()
+bad_idx <- c()
+for (col in colnames(design)) {
+  if (sum(design[, col] != 0) <= 1) {
+    singles <- c(singles, col)
+    bad_idx <- c(bad_idx, which(design[, col] != 0))
+  }
+}
+singles
+bad_idx
+
+df <- df[-bad_idx, ]
+```
+
+## Box cox
+```{r}
+bc <- boxcox(Price ~., data = df)
+bc$x[which.max(bc$y)]
+```
+
+For the sake of interpretability, we will use a log transformation, since $\lambda \approx 0$.
+```{r}
+x <- df
+x$Price <- log(df$Price)
+names(x)[names(x) == "Price"] <- "log(Price)"
+
+colnames(x)
+```
+
+## Inspect correlation
+```{r}
+cor_matrix <- cor(x[, sapply(x, is.numeric)])
+cor_melted <- melt(cor_matrix)
+ggplot(data = cor_melted, aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile(color = "white") +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                         midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                         name="Correlation") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    labs(x = "", y = "", title = "Correlation Matrix") +
+    geom_text(aes(label = sprintf("%.2f", value)), size = 3)
+```
+
+## Trim Regressors Based on Intuition
+Engine has high correlation with other regressors, and is highly related to more relevant statistics like torque and horsepower, so it is dropped.
+
+We need really only one dimension of the car. Height and length are not as correlated to price as width, and width gives more information about engine capacity, 
+
+All the torque and horsepower regressors are highly related. A typical car driver will prioritize maximum horsepower over the others, so only Max.Power.Value was kept.
+
+Fuel tank capacity information seems to be included in many other stats due its high correlation with many other regressors, so it was dropped.
+
+We do not think that color will be a useful predictor, and there are too many models so these categories are removed.
+
+```{r}
+x_trim <- remove_cols(x, c("Engine", "Length", "Max.Torque.RPM", "Max.Torque.Value", "Max.Power.RPM", "Color", "Model", "Height", "Fuel.Tank.Capacity"))
+model <- lm(`log(Price)` ~., data = x_trim)
+colnames(x_trim)
+```
+
+## Attempt to add interactions
+
+We consider only numerical interactions due to data sparsity; including categorical values produces NA's for most interactions. We do not expect kilometers driven to interact with max power or width, so those interactions are not considered.
+
+```{r}
+interactions <- lm(
+  `log(Price)` ~ . + Year:Kilometer + Year:Max.Power.Value 
+                   + Year:Width + Max.Power.Value:Width,
+  data = x_trim
+)
+
+anova(interactions)
+```
+
+Remove drivetrain and year x width interaction as they are not significant. All the others are significant even with Bonferroni adjustment.
+
+```{r}
+x_final <- remove_cols(x_trim, c("Drivetrain"))
+
+final <- lm(
+  `log(Price)` ~ . + Year:Kilometer + Year:Max.Power.Value + Max.Power.Value:Width,
+  data = x_final
+)
+
+anova(final)
+```
+
+## Inspect Multicollinearity and Leverage
+```{r}
+vif(final, type = "predictor")
+```
+
+The multicollinearity from width is surprising. We will remove that interaction term.
+```{r}
+final <- lm(
+  `log(Price)` ~ . + Year:Kilometer + Year:Max.Power.Value,
+  data = x_final
+)
+
+vif(final, type = "predictor")
+```
+We get that GVIF^(1/(2*Df)) $< 2.236068 \approx \sqrt5$, for all the regressors, so multicollinearity is low.
+
+
+```{r}
+which(abs(rstudent(final)) > 4)
+```
+After inspecting these data points, we do not find a good reason to remove them (i.e., they are not clerical errors).
+
+```{r}
+plot(model)
+```
+
+## Inspect Model Coefficients
+```{r}
+summary(final)
+anova(final)
+```
+
+## Normalized Coefficients
+```{r}
+normalized <- x_final
+for (col in colnames(normalized)) {
+  if (col != "log(Price)" && !(col %in% categorical)) {
+    normalized[, col] <- (normalized[, col] - min(normalized[, col])) / (max(normalized[, col]) - min(normalized[, col]))
+  }
+}
+
+normalized_model <- lm(`log(Price)` ~ . + Year:Kilometer + Year:Max.Power.Value, data = normalized)
+
+sort(abs(normalized_model$coefficients), decreasing = T)
+```
+
+## Confidence Intervals
+```{r}
+confint(final, level = 0.95)
+```
+
+## Inspection of Seller Type
+```{r}
+comp <- aov(`log(Price)`~Seller.Type, data = x)
+summary(comp)
+TukeyHSD(comp, conf.level=.95)
+```
+Surprisingly, individuals are able to sell their cars at a statistically significantly higher price compared to corporate sellers.

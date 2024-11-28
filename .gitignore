@@ -1,5 +1,7 @@
 *.csv
 *.Rproj
+*.Rdata
+*.Rhistory
 
 .DS_Store
 .Rproj.user/
