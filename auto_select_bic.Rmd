@@ -1,0 +1,155 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+library(car)
+library(reshape2)
+library(ggplot2)
+library(MASS)
+library(interactions)
+
+source("clean_data.R")
+
+
+df <- remove_cols(df, c("Color", "Model"))
+
+# Remove columns with only one observation and affected rows
+res <- convert_categorical(df, categorical)
+design <- as.data.frame(res$dummy)
+
+singles <- c()
+bad_idx <- c()
+for (col in colnames(design)) {
+  if (sum(design[, col] != 0) <= 1) {
+    singles <- c(singles, col)
+    bad_idx <- c(bad_idx, which(design[, col] != 0))
+  }
+}
+singles
+bad_idx
+
+df <- df[-bad_idx, ]
+```
+
+## Box Cox
+```{r}
+bc <- boxcox(Price ~., data = df)
+bc$x[which.max(bc$y)]
+```
+
+For the sake of interpretability, we will use a log transformation, since $\lambda \approx 0$.
+
+## Iteratively Remove Multicollinear Regressors
+```{r}
+x <- df
+model <- lm(log(Price) ~., data = x)
+removed <- c()
+
+finished <- F
+while(!finished) {
+  temp <- car::vif(model)[, "GVIF^(1/(2*Df))"]
+  worst <- names(which.max(temp))
+  if (length(temp) > 0 && temp[worst] > sqrt(5)) {
+    x <- remove_cols(x, c(worst))
+    model <- lm(log(Price) ~., data = x)
+
+    removed <- c(removed, worst)
+  } else {
+    finished <- T
+  }
+}
+
+removed
+```
+
+```{r}
+which(abs(rstudent(model)) > 4)
+```
+After inspecting these data points, we do not find a good reason to remove them (i.e., they are not clerical errors).
+
+## Add Interactions
+We consider only numerical interactions due to data sparsity; including categorical values produces NA's for most interactions. We do not expect kilometers driven to interact with torque or width, so those interactions are not considered.
+
+```{r}
+names(model$coefficients)[names(model$coefficients) %in% numerical]
+```
+
+```{r}
+model <- lm(
+  log(Price) ~ . + Year:Kilometer + Year:Max.Torque.RPM 
+                   + Year:Length + Year:Width 
+                   + Max.Torque.RPM:Length + Max.Torque.RPM:Width
+                   + Length:Width,
+  data = x
+)
+
+anova(model)
+```
+
+Interactions with width don't seem to be significant; remove them.
+```{r}
+model <- lm(
+  log(Price) ~ . + Year:Kilometer + Year:Max.Torque.RPM 
+                   + Year:Length + Max.Torque.RPM:Length,
+  data = x
+)
+
+anova(model)
+```
+
+Seems reasonable now. We will double check our assumptions
+```{r}
+vif(model, type = "predictor")
+```
+We get that GVIF^(1/(2*Df)) $> 2.236068 \approx \sqrt5$, for "Kilometer," but this is known to be important is does not exceed the threshold by a lot, so we keep it.
+
+```{r}
+plot(model)
+```
+
+## Backwards Stepwise Search
+We do a backwards search since our model already conforms to the linear assumptions and is performing well. We simply wish to reduce the model size now.
+```{r}
+reduced_model <- step(model, direction = "backward", data = x, trace = 0, k = log(nrow(x)))
+old <- names(model$coefficients)
+new <- names(reduced_model$coefficients)
+
+old[!(old %in% new)]
+```
+
+## Inspect Model Coefficients
+```{r}
+summary(reduced_model)
+anova(reduced_model)
+```
+
+## Final Model Verification
+```{r}
+plot(reduced_model)
+```
+
+
+## Normalized Coefficients
+```{r}
+normalized <- remove_cols(x, old[!(old %in% new)]) # removed from multicollinearity test
+normalized <- remove_cols(x, c("Seating.Capacity", "Seller.Type"))
+
+
+for (col in colnames(normalized)) {
+  if (col != "Price" && !(col %in% categorical)) {
+    normalized[, col] <- (normalized[, col] - mean(normalized[, col])) / sd(normalized[, col])
+  }
+}
+
+normalized_model <- lm(log(Price) ~ . + Year:Kilometer + Year:Max.Torque.RPM 
+                   + Year:Length + Max.Torque.RPM:Length, data = normalized)
+
+sort(abs(normalized_model$coefficients), decreasing = T)
+```
+
+## Confidence Intervals
+```{r}
+confint(reduced_model, level = 0.95)
+```

@@ -144,7 +144,7 @@ anova(final)
 normalized <- x_final
 for (col in colnames(normalized)) {
   if (col != "log(Price)" && !(col %in% categorical)) {
-    normalized[, col] <- (normalized[, col] - min(normalized[, col])) / (max(normalized[, col]) - min(normalized[, col]))
+    normalized[, col] <- (normalized[, col] - mean(normalized[, col])) / sd(normalized[, col])
   }
 }
 
@@ -164,4 +164,4 @@ comp <- aov(`log(Price)`~Seller.Type, data = x)
 summary(comp)
 TukeyHSD(comp, conf.level=.95)
 ```
-Surprisingly, individuals are able to sell their cars at a statistically significantly higher price compared to corporate sellers.
+Corporate sellers are able to sell their cars at a statistically significantly higher price compared to individual sellers.
