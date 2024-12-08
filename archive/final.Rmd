@@ -116,6 +116,14 @@ while(!finished) {
 removed
 ```
 
+Restore the dropped power predictors
+```{r}
+# x$Max.Power.Value <- design$Max.Power.Value
+# x$Max.Power.RPM <- design$Max.Power.RPM
+
+# model <- lm(log(Price) ~., data = x)
+# car::vif(model)
+```
 
 ## Leverage Points
 ```{r}
@@ -181,8 +189,8 @@ keep_cols <- c(keep_cols, "Price")
 
 subset <- x[, keep_cols]
 for (col in colnames(subset)) {
-  if (col != "Price") {
-    subset[, col] <- subset[, col] - max(subset[, col])
+  if (col != "Price" && !(col %in% categorical)) {
+    subset[, col] <- (subset[, col] - min(subset[, col])) / (max(subset[, col]) - min(subset[, col]))
   }
 }
 

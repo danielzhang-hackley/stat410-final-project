@@ -6,6 +6,7 @@ output: pdf_document
 ---
 
 ```{r}
+source("./preprocess.R")
 library(ggplot2)
 library(tidyr)
 library(dplyr)
@@ -20,6 +21,7 @@ data <- read.csv("vehicles.csv")
 df <- data
 df <- remove_cols(df, drop_cols)
 df <- remove_null(df)
+# df <- remove_outliers(df, numerical)
 get_num_unique(df)
 ```
 

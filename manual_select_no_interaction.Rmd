@@ -1,0 +1,166 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+library(car)
+library(reshape2)
+library(ggplot2)
+library(MASS)
+library(interactions)
+
+source("clean_data.R")
+
+
+df <- remove_cols(df, c("Color", "Model"))
+
+# Remove columns with only one observation and affected rows
+res <- convert_categorical(df, categorical)
+design <- as.data.frame(res$dummy)
+
+singles <- c()
+bad_idx <- c()
+for (col in colnames(design)) {
+  if (sum(design[, col] != 0) <= 1) {
+    singles <- c(singles, col)
+    bad_idx <- c(bad_idx, which(design[, col] != 0))
+  }
+}
+singles
+bad_idx
+
+df <- df[-bad_idx, ]
+```
+
+## Box cox
+```{r}
+bc <- boxcox(Price ~., data = df)
+bc$x[which.max(bc$y)]
+```
+
+For the sake of interpretability, we will use a log transformation, since $\lambda \approx 0$.
+```{r}
+x <- df
+x$Price <- log(df$Price)
+names(x)[names(x) == "Price"] <- "log(Price)"
+
+colnames(x)
+```
+
+## Inspect correlation
+```{r}
+cor_matrix <- cor(x[, sapply(x, is.numeric)])
+cor_melted <- melt(cor_matrix)
+ggplot(data = cor_melted, aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile(color = "white") +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                         midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                         name="Correlation") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    labs(x = "", y = "", title = "Correlation Matrix") +
+    geom_text(aes(label = sprintf("%.2f", value)), size = 3)
+```
+
+## Trim Regressors Based on Intuition
+Engine has high correlation with other regressors, and is highly related to more relevant statistics like torque and horsepower, so it is dropped.
+
+We need really only one dimension of the car. Height and length are not as correlated to price as width, and width gives more information about engine capacity, 
+
+All the torque and horsepower regressors are highly related. A typical car driver will prioritize maximum horsepower over the others, so only Max.Power.Value was kept.
+
+Fuel tank capacity information seems to be included in many other stats due its high correlation with many other regressors, so it was dropped.
+
+We do not think that color will be a useful predictor. Additionally, there are too many car models, so color and model are removed.
+
+```{r}
+x_trim <- remove_cols(x, c("Engine", "Length", "Max.Torque.RPM", "Max.Torque.Value", "Max.Power.RPM", "Color", "Model", "Height", "Fuel.Tank.Capacity"))
+colnames(x_trim)
+```
+
+## Inspect Multicollinearity and Leverage
+```{r}
+final <- lm(`log(Price)` ~., data = x_trim) 
+vif(final, type = "predictor")
+```
+We get that GVIF^(1/(2*Df)) $> 2.236068 \approx \sqrt5$, for "Max.Power.Value," but this is known to be important, does not exceed the threshold by a lot, and no interactions are indicated, so we keep it.
+
+```{r}
+which(abs(rstudent(final)) > 4)
+```
+After inspecting these data points, we do not find a good reason to remove them (i.e., they are not clerical errors).
+
+```{r}
+plot(final)
+```
+
+## Inspect Model Coefficients
+```{r}
+summary(final)
+anova(final)
+```
+
+Drivetrain is not a significant predictor. We will drop it for model simplicity.
+
+```{r}
+temp <- final
+final <- lm(`log(Price)` ~ . - Drivetrain, data = x_trim)
+
+summary(final)
+anova(final)
+```
+
+
+## Normalized Coefficients
+```{r}
+normalized <- x_trim
+for (col in colnames(normalized)) {
+  if (col != "log(Price)" && !(col %in% categorical)) {
+    normalized[, col] <- (normalized[, col] - mean(normalized[, col])) / sd(normalized[, col])
+  }
+}
+
+normalized_model <- lm(`log(Price)` ~ . - Drivetrain, data = normalized)
+
+summary(normalized_model)
+
+sort(abs(normalized_model$coefficients), decreasing = T)
+```
+
+## Confidence Intervals
+```{r}
+confint(normalized_model, level = 0.95)
+```
+
+## Inspection of Seller Type
+
+First we check the data in general.
+```{r}
+comp <- aov(`log(Price)`~Seller.Type, data = x)
+summary(comp)
+TukeyHSD(comp, conf.level=.95)
+```
+
+Next, we check what our model would say.
+```{r}
+linearHypothesis(final, c("Seller.TypeCorporate = Seller.TypeIndividual"))
+```
+
+Corporate sellers are able to sell their cars at a statistically significantly higher price compared to individual sellers. Considering that our model states that their impact on price is not significant, it could mean that there are covariates that affect the seller's ability get a price, and this covariates could be handled by our model.
+
+
+## Inspection of Owner Number
+
+First inspect the data alone.
+```{r}
+comp <- aov(`log(Price)`~Owner, data = x)
+summary(comp)
+TukeyHSD(comp, conf.level=.95)
+```
+
+Next, we check what our model would say.
+```{r}
+linearHypothesis(final, c("OwnerSecond = 0", "OwnerThird = 0", "OwnerUnRegistered Car = 0"))
+```
+None are significantly different from baseline (first owner) according to our model, but for some reason third owner is significantly different from first and second in the original data. This heavily implies that there is some other covariate impacting the price for third owner cars.

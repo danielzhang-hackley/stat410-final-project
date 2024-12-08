@@ -69,41 +69,10 @@ which(abs(rstudent(model)) > 4)
 ```
 After inspecting these data points, we do not find a good reason to remove them (i.e., they are not clerical errors).
 
-## Add Interactions
-We consider only numerical interactions due to data sparsity; including categorical values produces NA's for most interactions. We do not expect kilometers driven to interact with torque or width, so those interactions are not considered.
-
-```{r}
-names(model$coefficients)[names(model$coefficients) %in% numerical]
-```
-
-```{r}
-model <- lm(
-  log(Price) ~ . + Year:Kilometer + Year:Max.Torque.RPM 
-                   + Year:Length + Year:Width 
-                   + Max.Torque.RPM:Length + Max.Torque.RPM:Width
-                   + Length:Width,
-  data = x
-)
-
-anova(model)
-```
-
-Interactions with width don't seem to be significant; remove them.
-```{r}
-model <- lm(
-  log(Price) ~ . + Year:Kilometer + Year:Max.Torque.RPM 
-                   + Year:Length + Max.Torque.RPM:Length,
-  data = x
-)
-
-anova(model)
-```
-
-Seems reasonable now. We will double check our assumptions
 ```{r}
 vif(model, type = "predictor")
 ```
-We get that GVIF^(1/(2*Df)) $> 2.236068 \approx \sqrt5$, for "Kilometer," but this is known to be important is does not exceed the threshold by a lot, so we keep it.
+We get that GVIF^(1/(2*Df)) $< 2.236068 \approx \sqrt5$ for all regressors, and no interactions are indicated, so there is likely no multicollinearity.
 
 ```{r}
 plot(model)
@@ -118,6 +87,7 @@ new <- names(reduced_model$coefficients)
 
 old[!(old %in% new)]
 ```
+Seller type and seating capacity were removed by AIC.
 
 ## Inspect Model Coefficients
 ```{r}
@@ -133,23 +103,23 @@ plot(reduced_model)
 
 ## Normalized Coefficients
 ```{r}
-normalized <- remove_cols(x, old[!(old %in% new)]) # removed from multicollinearity test
-normalized <- remove_cols(x, c("Seating.Capacity", "Seller.Type"))
+# removed by AIC. remember multicollinear columns were already removed
+normalized <- remove_cols(x, c("Seating.Capacity", "Seller.Type")) 
 
 
 for (col in colnames(normalized)) {
   if (col != "Price" && !(col %in% categorical)) {
-    normalized[, col] <- (normalized[, col] - min(normalized[, col])) / (max(normalized[, col]) - min(normalized[, col]))
+    normalized[, col] <- (normalized[, col] - mean(normalized[, col])) / sd(normalized[, col])
   }
 }
 
-normalized_model <- lm(log(Price) ~ . + Year:Kilometer + Year:Max.Torque.RPM 
-                   + Year:Length + Max.Torque.RPM:Length, data = normalized)
+normalized_model <- lm(log(Price) ~ ., data = normalized)
+summary(normalized_model)
 
 sort(abs(normalized_model$coefficients), decreasing = T)
 ```
 
 ## Confidence Intervals
 ```{r}
-confint(reduced_model, level = 0.95)
+confint(normalized_model, level = 0.95)
 ```

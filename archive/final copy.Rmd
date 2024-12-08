@@ -1,0 +1,198 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+## Imports
+```{r}
+source("preprocess.R")
+```
+
+## Load Data and Format
+```{r}
+# Load data
+data <- read.csv("car details v4.csv")
+nrow(data)
+
+df <- data
+df <- remove_null(df)
+df <- df[!duplicated(df), ]
+nrow(df)
+
+# Drop unwanted columns
+df <- remove_cols(df, c("Model"))
+
+# Remove the " cc" suffix from Engine
+df$Engine <- as.numeric(gsub("[^0-9]", "", df$Engine)) # Convert to numbers, ex. "123 cc" -> 123
+
+# Split max torque and the RPM at which max torque occurs
+df <- tidyr::separate(df, Max.Torque, into = c("Max.Torque.Value", "Max.Torque.RPM"), sep = "@")
+df$Max.Torque.Value <- as.numeric(gsub("[^0-9]", "", df$Max.Torque.Value))
+df$Max.Torque.RPM <- as.numeric(gsub("[^0-9]", "", df$Max.Torque.RPM))
+
+# Split the max horsepower and the RPM at which max horsepower occurs
+df <- tidyr::separate(df, Max.Power, into = c("Max.Power.Value", "Max.Power.RPM"), sep = "@")
+df$Max.Power.Value <- as.numeric(gsub("[^0-9]", "", df$Max.Power.Value))
+df$Max.Power.RPM <- as.numeric(gsub("[^0-9]", "", df$Max.Power.RPM))
+
+colnames(df)
+
+# remove nulls again in case the power and torque columns are malformed
+df <- remove_null(df)
+
+# Numerical and categorical regressors
+# Note that Seating.Capacity was omitted to exempt it from 1.5 IQR
+numerical <- c(
+  "Price", "Year", "Kilometer", "Engine",
+  "Max.Power.Value", "Max.Power.RPM", "Max.Torque.Value", "Max.Torque.RPM",
+  "Length", "Width", "Height", "Fuel.Tank.Capacity",
+  "Torque.RPM", "Power.RPM"
+)
+categorical <- c(
+  "Make", "Fuel.Type", "Transmission", "Location", "Color", 
+  "Owner", "Seller.Type", "Drivetrain"
+)
+
+# Outliers for numerical regressors
+df <- remove_outliers(df, numerical)
+nrow(df)
+
+# Convert categorical data to factors
+res <- convert_categorical(df, categorical)
+design <- as.data.frame(res$dummy)
+ncol(design)
+
+# Remove columns with only one observation and affected rows
+singles <- c()
+bad_idx <- c()
+for (col in colnames(design)) {
+  if (sum(design[, col] != 0) <= 1) {
+    singles <- c(singles, col)
+    bad_idx <- c(bad_idx, which(design[, col] != 0))
+  }
+}
+singles
+bad_idx
+
+design <- remove_cols(design, singles)
+design <- design[-bad_idx, ]
+
+nrow(design)
+ncol(design)
+```
+## Naive
+```{r}
+naive <- lm(log(Price) ~., data = df)
+summary(naive)
+```
+
+
+## Multicollinearity
+```{r}
+x <- design
+model <- lm(log(Price) ~., data = x)
+removed <- c()
+
+finished <- F
+while(!finished) {
+  temp <- car::vif(model)
+  worst <- names(which.max(temp))
+  if (temp[worst] > 5) {
+    x <- remove_cols(x, c(gsub("^`|`$", "", worst)))
+    model <- lm(log(Price) ~., data = x)
+
+    removed <- c(removed, worst)
+  } else {
+    finished <- T
+  }
+}
+
+removed
+```
+
+Restore the dropped power predictors
+```{r}
+x$Max.Power.Value <- design$Max.Power.Value
+x$Max.Power.RPM <- design$Max.Power.RPM
+
+model <- lm(log(Price) ~., data = x)
+car::vif(model)
+```
+
+## Leverage Points
+```{r}
+which(abs(rstudent(model)) > 4)
+
+# all of these points were manually inspected, and were not suspected to be clerical errors.
+```
+
+## Diagnostics
+```{r}
+plot(model)
+```
+```{r}
+summary(model)
+```
+
+
+## Model Reduction
+```{r}
+reduced_model <- step(model, direction = "backward", data = x, trace = 0)
+old <- names(model$coefficients)
+new <- names(reduced_model$coefficients)
+
+old[!(old %in% new)]
+```
+```{r}
+plot(reduced_model)
+```
+
+
+```{r}
+summary(reduced_model)
+```
+
+```{r}
+npar <- length(model$coefficients) + 1; n <- length(model$residuals)
+extractAIC(model)[2] + 2*npar*(npar + 1)/(n - npar - 1)
+
+npar <- length(reduced_model$coefficients) + 1; n <- length(reduced_model$residuals)
+extractAIC(reduced_model)[2] + 2*npar*(npar + 1)/(n - npar - 1)
+```
+
+## Confidence Intervals
+```{r}
+err <- summary(reduced_model)$coefficients[, "Std. Error"]
+est <- summary(reduced_model)$coefficients[, "Estimate"]
+tval <- qt(1 - 0.05/2, df = nrow(x) - length(reduced_model$coefficients))
+
+ci_red <- data.frame(low = est - err * tval, high = est + err * tval)
+
+err <- summary(model)$coefficients[, "Std. Error"]
+est <- summary(model)$coefficients[, "Estimate"]
+tval <- qt(1 - 0.05/2, df = nrow(x) - length(model$coefficients))
+
+ci_full <- data.frame(low = est - err * tval, high = est + err * tval)
+```
+
+## Normalized models
+```{r}
+keep_cols <- gsub("^`|`$", "", names(reduced_model$coefficients))
+keep_cols <- keep_cols[keep_cols != "(Intercept)"]
+keep_cols <- c(keep_cols, "Price")
+
+subset <- x[, keep_cols]
+for (col in colnames(subset)) {
+  if (col != "Price" && !(col %in% categorical)) {
+    subset[, col] <- (subset[, col] - min(subset[, col])) / (max(subset[, col]) - min(subset[, col]))
+  }
+}
+
+normalized_model <- lm(log(Price)~., data = subset)
+
+sort(abs(normalized_model$coefficients), decreasing = T)
+```
+
+```{r}
+normalized_model$coefficients
+```

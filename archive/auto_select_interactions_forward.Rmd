@@ -1,0 +1,55 @@
+```{r}
+source("clean_data.R")
+
+
+df <- remove_cols(df, c("Color", "Model"))
+
+# Remove columns with only one observation and affected rows
+res <- convert_categorical(df, categorical)
+design <- as.data.frame(res$dummy)
+
+singles <- c()
+bad_idx <- c()
+for (col in colnames(design)) {
+  if (sum(design[, col] != 0) <= 1) {
+    singles <- c(singles, col)
+    bad_idx <- c(bad_idx, which(design[, col] != 0))
+  }
+}
+singles
+bad_idx
+
+df <- df[-bad_idx, ]
+```
+
+```{r}
+x <- df
+model <- lm(log(Price) ~., data = x)
+removed <- c()
+
+finished <- F
+while(!finished) {
+  temp <- car::vif(model)[, "GVIF^(1/(2*Df))"]
+  worst <- names(which.max(temp))
+  if (length(temp) > 0 && temp[worst] > sqrt(5)) {
+    x <- remove_cols(x, c(worst))
+    model <- lm(log(Price) ~., data = x)
+
+    removed <- c(removed, worst)
+  } else {
+    finished <- T
+  }
+}
+
+removed
+```
+
+```{r}
+
+naive <- lm(log(Price) ~ 1, data = x)
+
+interactions <- step(
+  naive, 
+  scope = formula(lm(log(Price) ~ .^2, data = x)),
+  direction = "forward")
+```
